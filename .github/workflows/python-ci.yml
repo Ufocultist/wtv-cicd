@@ -564,8 +564,8 @@ jobs:
         - name: 'Build and push to ECR'
           if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (inputs.registry_type, 'ecr') }}
           run: |
-            docker build -t ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}:${{ inputs.art_vsn }} .
-            docker push ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}:${{ inputs.art_vsn }}
+            docker build -t ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}:${{ needs.build.outputs.vsn }} .
+            docker push ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}:${{ needs.build.outputs.vsn }}
 
 
   #################################
