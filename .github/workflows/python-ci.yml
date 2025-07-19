@@ -550,6 +550,15 @@ jobs:
       #if: ( always() && inputs.docker_build )
       needs: [build]
       steps:
+
+        # Checkout
+        - name: GitHub Checkout
+          uses: actions/checkout@v4
+          with:
+            fetch-depth: 1
+            repository: ${{ inputs.repository }}
+            token: ${{ secrets.GH_PR_TOKEN || secrets.GITHUB_TOKEN }}
+
         # Configure AWS Credentials
         - name: 'Configure AWS Credentials'
           if: (contains (inputs.registry_type, 'ecr'))
