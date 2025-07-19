@@ -1,0 +1,41 @@
+name: EKS CD
+
+on:
+  workflow_call:
+    inputs:
+      aws_account_id:
+        description: 'AWS Account ID'
+        required: true
+        type: string
+
+
+jobs:
+
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      checks: write
+      issues: read
+      pull-requests: write
+
+    steps:
+
+      # Checkout
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::${{ inputs.aws_account_id }}:role/dev-wtv-github-actions-role
+          aws-region: us-east-1
+
+      - name: Fetch secrets from AWS Secrets Manager
+        id: secrets
+        run: |
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id /wtv/dev/db --query SecretString --output text)
+          echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
+          cat .env
