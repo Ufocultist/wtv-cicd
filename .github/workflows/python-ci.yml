@@ -540,30 +540,33 @@ jobs:
     # Docker Build & Publish
     ########################
     publish:
+      runs-on: ${{ fromJson(inputs.runner_labels) }}
       if: ${{ inputs.docker_build }}
       #if: ( always() && inputs.docker_build )
       needs: [build]
-      uses: ufocultist/wtv-cicd/.github/workflows/publish.yml@feature/develop
-      with:
-        art_vsn: ${{ needs.build.outputs.vsn }}
-        app_name: ${{ inputs.app_name }}
-        library: ${{ inputs.library }}
-        function: ${{ inputs.function }}
-        docker_build: ${{ inputs.docker_build }}
-        docker_build_args: ${{ inputs.docker_build_args }}
-        docker_uri: ${{ inputs.docker_uri }}
-        docker_repo: ${{ inputs.docker_repo }}
-        repository: ${{ inputs.repository }}
-        registry_type: ${{ inputs.registry_type }}
-        azure_cr: ${{ inputs.azure_cr }}
-        aws_ecr: ${{ inputs.aws_ecr }}
-        aws_region: ${{ inputs.aws_region }}
-        aws_account_id: ${{ inputs.aws_account_id }}
-        gcp_ar: ${{ inputs.gcp_ar }}
-        gcp_region: ${{ inputs.gcp_region }}
-        gcp_project: ${{ inputs.gcp_project }}
-        runner_labels: ${{ inputs.runner_labels }} #Doesn't work with SH Runner. Defaulted to ubuntu-latest.
-      secrets: inherit
+      steps:
+        # Configure AWS Credentials
+        - name: 'Configure AWS Credentials'
+          if: (contains (inputs.registry_type, 'ecr'))
+          uses: aws-actions/configure-aws-credentials@v4
+          with:
+            aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            aws-region: ${{ inputs.aws_region }}
+
+        # Login to AWS ECR
+        - name: 'Login to AWS ECR'
+          if: (contains (inputs.registry_type, 'ecr'))
+          run: |
+            aws ecr get-login-password --region ${{ inputs.aws_region }} | docker login --username AWS --password-stdin ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com      
+
+        # Push to ECR
+        - name: 'Build and push to ECR'
+          if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (inputs.registry_type, 'ecr') }}
+          run: |
+            docker build -t ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}:${{ inputs.art_vsn }} .
+            docker push ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}:${{ inputs.art_vsn }}
+
 
   #################################
   # Output to GITHUB
