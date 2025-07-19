@@ -1,0 +1,241 @@
+name: Docker Build and Publish
+
+on:
+  workflow_call:
+
+    # Inputs
+    inputs:
+      repository:
+        required: false
+        type: string
+        default: ${{ github.repository }}
+      docker_uri:
+        default: docker.io
+        description: "The uri of the Jfrog docker repository"
+        type: string
+        required: false
+      docker_repo:
+        description: "The name of the Jfrog docker repository"
+        type: string
+        required: false
+      library:
+        default: false
+        description: "Flag to run Gradle publish"
+        required: false
+        type: boolean
+      function:
+        default: false
+        description: "Flag to run Function publish"
+        required: false
+        type: boolean
+      docker_build:
+        default: false
+        description: "Flag to run Docker image publish"
+        required: false
+        type: boolean
+      docker_build_args:
+        description: "Extra args to pass for docker build"
+        type: string
+        required: false
+      app_name:
+        description: "The value to name the resource in GCP"
+        type: string
+        required: true
+      art_vsn:
+        description: "Artifact version. GITHUBSHA or Symantic"
+        type: string
+        required: false
+      #AZURE#######
+      azure_cr:
+        description: "Name of Azure Container Registry"
+        type: string
+        required: false
+      #AWS########
+      aws_ecr:
+        description: "Name of AWS Container Registry"
+        type: string
+        required: false
+      aws_ecr_namespace:
+        description: "AWS Container Registry Namespace"
+        default: smotrish_ns
+        type: string
+        required: false
+      aws_region:
+        description: "AWS Region"
+        type: string
+        required: false
+      aws_account_id:
+        description: "AWS Account ID"
+        type: string
+        required: true
+      #GCP########
+      gcp_ar:
+        description: "Name of GCP Artifact Registry"
+        type: string
+        required: false
+      gcp_region:
+        description: 'GCP region'
+        type: string
+        required: false
+      gcp_project:
+        description: "GCP Project ID"
+        type: string
+        required: false
+      ############
+      registry_type:
+        description: "dockerhub or azure container registry(dockerhub/acr)"
+        default: dockerhub
+        type: string
+        required: false
+      #Runners
+      runner_labels:
+        default: '[ "ubuntu-latest" ]'
+        description: 'Runner labels list. GH is ubuntu-latest, SH is self-hosted, linux'
+        type: string
+        required: false
+
+#    secrets:
+#      JFROG_USER:
+#        description: "The JFrog user to use for the build"
+#        required: true
+#      JFROG_API_KEY:
+#        description: "The JFrog API Key to use for the build"
+#        required: false
+#      JFROG_ACCESS_TOKEN:
+#          description: "The JFrog Access Token"
+#          required: false
+
+# Jobs
+jobs:
+  ########################
+  # Docker Build & Publish
+  ########################
+  publish:
+    #needs: build
+    runs-on: self-hosted
+#    runs-on: ubuntu-latest
+    #    runs-on: ${{ fromJson(inputs.runner_labels) }}
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+      checks: write
+      issues: read
+      pull-requests: write
+
+    steps:
+      # Checkout
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          repository: ${{ inputs.repository }}
+          token: ${{ secrets.GH_PR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # Login to GCP Artifact Registry
+      - name: 'Configure GCP Credentials'
+        if: (contains (inputs.registry_type, 'gar'))
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_TF_SA }}'
+
+      # Configure Docker to use the gcloud CLI as a credential helper
+      - name: 'Authenticate Docker to Google Artifact Registry'
+        if: (contains (inputs.registry_type, 'gar'))
+        run: gcloud auth configure-docker ${{ inputs.gcp_region }}-docker.pkg.dev
+
+      # Configure AWS Credentials
+      - name: 'Configure AWS Credentials'
+        if: (contains (inputs.registry_type, 'ecr'))
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      # Login to AWS ECR
+      - name: 'Login to AWS ECR'
+        if: (contains (inputs.registry_type, 'ecr'))
+        run: |
+          aws ecr get-login-password --region ${{ inputs.aws_region }} | docker login --username AWS --password-stdin ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com      
+
+      # Configure Azure Credentials
+      - name: 'Configure Azure CLI'
+        if: (contains (inputs.registry_type, 'acr'))
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Login to Azure Container Registry
+      - name: 'Azure CR Login'
+        if: (contains (inputs.registry_type, 'acr'))
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ inputs.azure_cr }}.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      # Push to GAR
+      - name: 'Build and push to GAR'
+        if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (inputs.registry_type, 'gar') }}
+        run: |
+          docker build -t ${{ inputs.gcp_region }}-docker.pkg.dev/${{ inputs.gcp_project }}/${{ inputs.gcp_ar }}/${{ inputs.app_name }}:${{ inputs.art_vsn }} .
+          docker push ${{ inputs.gcp_region }}-docker.pkg.dev/${{ inputs.gcp_project }}/${{ inputs.gcp_ar }}/${{ inputs.app_name }}:${{ inputs.art_vsn }}
+
+      # Push to ACR
+      - name: 'Build and push to ACR'
+        if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (inputs.registry_type, 'acr') }}
+        run: |
+          docker build -t ${{ inputs.azure_cr }}.azurecr.io/${{ inputs.app_name }}:${{ inputs.art_vsn }} .
+          docker push ${{ inputs.azure_cr }}.azurecr.io/${{ inputs.app_name }}:${{ inputs.art_vsn }}
+
+      # Push to ECR
+      - name: 'Build and push to ECR'
+        if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (inputs.registry_type, 'ecr') }}
+        run: |
+          docker build -t ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}:${{ inputs.art_vsn }} .
+          docker push ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}:${{ inputs.art_vsn }}
+
+
+      - name: Login to Docker Hub
+        if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (!inputs.registry_type, 'local') }}
+        run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+
+      # Push to Remote Docker Hub
+      - name: 'Login, Build and Push to Remote Docker Hub'
+        if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (inputs.registry_type, 'dockerhub') }}
+        run: |
+          sudo docker build ${{ inputs.docker_build_args }} -t ${{ inputs.docker_repo }}/${{ inputs.app_name }}:${{ inputs.art_vsn }} .
+          sudo docker push ${{ inputs.docker_repo }}/${{ inputs.app_name }}:${{ inputs.art_vsn }}
+
+      # Push to Local Docker Hub
+      - name: 'Login, Build and Push to local Docker Hub'
+        if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (inputs.registry_type, 'local') }}
+        run: |
+          docker build -t ${{ inputs.docker_repo }}/${{ inputs.app_name }}:${{ inputs.art_vsn }} .
+          docker push ${{ inputs.docker_repo }}/${{ inputs.app_name }}:${{ inputs.art_vsn }}
+
+#      echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+#      # Build the Docker Image
+#      - name: Build Docker Image
+#        if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (inputs.registry_type, 'dockerhub') }}
+#        id: docker-build
+#        run: |
+#          docker build -t ${{ inputs.docker_repo }}/${{ inputs.app_name }}:${{ inputs.art_vsn }} .
+#
+#
+#      # Publish Image to Docker Hub
+#      - name: Publish Docker Image to Docker Hub
+#        if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (inputs.registry_type, 'dockerhub') }}
+#        id: docker-publish
+#        run: |
+#          docker push ${{ inputs.docker_uri }}/${{ inputs.docker_repo }}/${{ inputs.app_name }}:${{ inputs.art_vsn }}
+
+
+#      - name: Build and Publish Nginx to ACR
+#        if: ${{ inputs.docker_build && !inputs.library && !inputs.function && contains (inputs.registry_type, 'acr') }}
+#        run: |
+#          cd ./nginx
+#          docker build -t ${{ inputs.azure_cr }}.azurecr.io/nginx:v1 .
+#          docker push ${{ inputs.azure_cr }}.azurecr.io/nginx:v1

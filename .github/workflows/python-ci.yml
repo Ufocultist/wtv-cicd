@@ -1,0 +1,589 @@
+name: Python CI
+
+on:
+  workflow_call:
+    # Outputs
+    outputs:
+      tag_version:
+        description: "Image tag"
+        value: ${{ jobs.build.outputs.vsn }}
+
+    # Inputs
+    inputs:
+      repository:
+        required: false
+        type: string
+        default: ${{ github.repository }}
+      tag_release:
+        default: false
+        description: "When true, create tag in github repo for release"
+        type: boolean
+        required: false
+      app_name:
+        description: "The value to name the resource in GCP"
+        type: string
+        required: true
+      app_ext:
+        default: tar.gz
+        description: "Extension of the artifact file without name and version"
+        type: string
+        required: false
+      app_file:
+        description: "The name of the artifact file without version and extension"
+        type: string
+        required: true
+      python_vsn:
+        description: "Version of Python"
+        default: '3.11'
+        type: string
+        required: false
+      build_tool:
+        description: "Dependencies tool"
+        default: 'pip'
+        type: string
+        required: false
+      build_path:
+        default: dist
+        description: "A path to Python builds"
+        type: string
+        required: false
+      docker_uri:
+        default: docker.io
+        description: "The uri of the Artifactory docker repository"
+        type: string
+        required: false
+      docker_repo:
+        description: "The name of the Artifactory docker repository"
+        type: string
+        required: false
+      library:
+        default: false
+        description: "Flag to run Gradle publish"
+        required: false
+        type: boolean
+      function:
+        default: false
+        description: "Flag to run Function publish"
+        required: false
+        type: boolean
+      dockerfile_path:
+        description: "Customize Dockerfile file path"
+        type: string
+        required: false
+      docker_build:
+        default: false
+        description: "Flag to run Docker image publish"
+        required: false
+        type: boolean
+      docker_build_args:
+        description: "Extra args to pass for docker build"
+        type: string
+        required: false
+      requirements_file:
+        default: 'requirements.txt'
+        description: 'file where you list and install your deps'
+        type: string
+        required: false
+      coverage_file:
+        default: standalone_coverage.txt
+        description: "Name of the coverage file"
+        required: false
+        type: string
+      coverage_file_path:
+        default: standalone_coverage.txt
+        description: "Location of the coverage file"
+        required: false
+        type: string
+      coverage_dir:
+        description: ""
+        default: .
+        required: false
+        type: string
+      coverage_min:
+        default: 80
+        description: 'Min test coverage'
+        type: number
+        required: false
+      unit_test_enable:
+        default: true
+        description: "Flag to run Unit Test Job"
+        required: false
+        type: boolean
+      snyk_scan:
+        default: true
+        description: "Flag to run Snyk Job"
+        required: false
+        type: boolean
+      pass_failed_unit_test:
+        description: "Flag to exit the pipeline in case if Coverage is below limit"
+        default: 'exit 1'
+        type: string
+        required: false
+      add_dep_tools:
+        description: "Additional Dependencies tools"
+        default: ''
+        type: string
+        required: false
+      test_tool:
+        description: "A list of unit test tools"
+        default: doit
+        required: false
+        type: string
+      poetry_checkers:
+        description: ''
+        type: string
+        required: false
+      #SNYK####
+      snyk_org:
+        description: "The name of the SNYK organization."
+        type: string
+      #AZURE####
+      azure_cr:
+        description: 'Azure container registry name'
+        type: string
+        required: false
+      #AWS#####
+      aws_ecr:
+        description: 'AWS container registry name'
+        type: string
+        required: false
+      aws_region:
+        description: 'AWS region'
+        type: string
+        required: false
+      aws_account_id:
+        description: "AWS Account ID"
+        type: string
+        required: false
+      #GCP########
+      gcp_ar:
+        description: "Name of GCP Artifact Registry"
+        type: string
+        required: false
+      gcp_region:
+        description: 'GCP region'
+        type: string
+        required: false
+      gcp_project:
+        description: "GCP Project Name"
+        type: string
+        required: false
+      ##########
+      registry_type:
+        description: 'Registry type'
+        type: string
+        required: false
+      #Runners
+      runner_labels:
+        default: '[ "ubuntu-latest" ]'
+        description: 'Runner labels list. GH is ubuntu-latest, SH is self-hosted, linux'
+        type: string
+        required: false
+
+#    secrets:
+#      Artifactory_USER:
+#        description: "The Artifactory user to use for the build"
+#        required: true
+#      Artifactory_API_KEY:
+#        description: "The Artifactory API Key to use for the build"
+#        required: false
+#      Artifactory_ACCESS_TOKEN:
+#          description: "The Artifactory Access Token"
+#          required: false
+
+# Jobs
+jobs:
+    build:
+      runs-on: ${{ fromJson(inputs.runner_labels) }}
+      outputs:
+        vsn: ${{ env.cond_tag }}
+        tag_activated: ${{ steps.tag_version.outcome }}
+      permissions:
+        actions: read
+        id-token: write
+        contents: write
+        checks: write
+        issues: read
+        pull-requests: write
+      steps:
+        # Checkout
+        - name: Checkout
+          uses: actions/checkout@v4
+          with:
+            fetch-depth: 1
+            repository: ${{ inputs.repository }}
+            token: ${{ secrets.GH_PR_TOKEN || secrets.GITHUB_TOKEN }}
+
+        # Check output.txt
+        - name: Check OUTPUT using API
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          run: |
+            output_file=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              /repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+              | jq -r '.artifacts[] | select(.name == "output.txt") | .name')
+            echo "output_file=${output_file}" >> $GITHUB_ENV
+
+        # Download output from GitHub
+        - name: Download output.txt
+          if: ( env.output_file == 'output.txt' )
+          uses: actions/download-artifact@v4
+          with:
+            name: output.txt
+            path: ./
+
+        # Parse output
+        - name: Parse Output File
+          if: ( env.output_file == 'output.txt' )
+          id: pre-parse
+          run: |
+            while IFS= read -r line; do
+              value=$(echo "$line" | cut -d= -f2)
+              echo "tag_version=$value" >> $GITHUB_ENV
+            done < output.txt
+
+        # Bump version for main branch
+        - name: Bump Semantic Version
+          if: (inputs.tag_release && env.tag_version == '')
+          id: tag_version
+          uses: mathieudutour/github-tag-action@v6.2
+          with:
+            github_token: ${{ secrets.GITHUB_TOKEN }}
+            default_bump: minor
+            custom_release_rules: fix:patch,feat:minor,perf:major
+            tag_prefix: ""
+            dry_run: true
+            fetch_all_tags: true
+
+        # Set short GITHUB SHA
+        - name: Create short GITHUB SHA
+          if: (!inputs.tag_release && env.tag_version == '')
+          id: shortsha
+          run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+        # Version condition
+        - name: Set version depending on condition
+          id: cond-tag
+          run: |
+            if [[ "${{ inputs.tag_release }}" == true ]]; then
+              if [[ "${{ env.tag_version }}" == '' ]]; then
+                echo "cond_tag=${{ steps.tag_version.outputs.new_tag }}" >> $GITHUB_ENV
+                echo "tag_release"
+              else
+                echo "cond_tag=${{ env.tag_version }}" >> $GITHUB_ENV
+                echo "external release value used"
+              fi
+            elif [[ "${{ inputs.tag_release }}" == false ]]; then
+              if [[ "${{ env.tag_version }}" == '' ]]; then
+                echo "cond_tag=${{ env.sha_short }}" >> $GITHUB_ENV
+                echo "sha_short"
+              else
+                echo "cond_tag=${{ env.tag_version }}" >> $GITHUB_ENV
+                echo "external sha value used"
+              fi
+            fi   
+
+
+        #Setup mariadb connector
+        - name: Setup MariaDB connector
+          run: |
+            sudo apt install libmariadb3 libmariadb-dev
+
+        ######Python and cache setup###
+        # Python Setup
+        - name: Setup Python ${{ inputs.python_vsn }}
+          id: setup-python
+          uses: actions/setup-python@v5
+          with:
+            python-version: ${{ inputs.python_vsn }}
+
+        #Cache
+        - name: Cache
+          uses: actions/cache@v4
+          id: cache
+          with:
+            path: ./env
+            key: ${{ runner.os }}-env-v2-${{ hashFiles('**/requirements.txt') }}
+
+
+        #INSTALL DEPENDENCIES PIP and Poetry
+
+        # Install Python Package manager
+        - name: Install ${{ inputs.build_tool }}
+          run: |
+            python -m pip install --upgrade pip
+            if [[ "${{ inputs.build_tool }}" == 'poetry' ]]; then
+              echo -e "\e[32mInstalling ${{ inputs.build_tool }}...\e[0m"
+              pip install ${{ inputs.build_tool }}
+            fi
+
+        # Install Additional packages
+        - name: Install ${{ inputs.add_dep_tools }}
+        #  if: ${{ inputs.add_dep_tools != '' }}
+          run: |
+            echo -e "\e[32mInstalling Additional tools...\e[0m"
+            pip install build ${{ inputs.add_dep_tools }}
+
+        # Install Dependencies
+        - name: Install dependencies with ${{ inputs.build_tool }}
+          if:  ${{ inputs.requirements_file != '' }}
+          run: |
+            if [[ -f "pyproject.toml" && "${{ inputs.build_tool }}" == 'poetry' ]]; then
+              echo -e "\e[32mRunning Poetry Export...\e[0m" 
+              poetry export -f ${{ inputs.requirements_file }} --output ${{ inputs.requirements_file }} --without-hashes --with dev
+            fi 
+            echo -e "\e[32mInstalling Dep's from ${{ inputs.requirements_file }}\e[0m"
+            pip install -r ${{ inputs.requirements_file }}  
+          
+
+        #BUILD with Python or Poetry
+        #Build package
+        - name: Build package
+          run: |
+            if [[ "${{ inputs.build_tool }}" == 'poetry' ]]; then
+              echo -e "\e[32mPoetry Build...\e[0m" 
+              poetry build --output ${{ inputs.build_path }} --format ${{ inputs.format }}
+            elif [[ "${{ inputs.build_tool }}" == 'pip' ]]; then
+              echo -e "\e[32mPython Build...\e[0m"
+              python -m build
+            fi
+            for file in ${{ inputs.build_path }}/*-*.tar.gz; do
+                new_name="${{inputs.app_file}}-${{env.cond_tag}}.${{ inputs.app_ext }}"
+                mv "$file" ${{ inputs.build_path }}/"$new_name"
+            done
+
+#        # List files
+#        - name: List files
+#          run: |
+#            ls -la
+#            ls -la dist
+
+        # Upload artifacts to GitHub
+        - name: Archive artifact(s)
+          uses: actions/upload-artifact@v4
+          with:
+            name: ${{ inputs.app_file }}-${{ env.cond_tag }}.${{ inputs.app_ext }}
+            path: |
+              ${{ inputs.build_path }}
+            retention-days: 1
+
+    #############
+    #END OF BUILD
+    #############
+
+  # ##################
+  # # Run Unit Tests
+  # ##################
+    unit-test:
+      if: false
+      #if: ${{ inputs.unit_test_enable }}
+      needs: build
+      runs-on: ${{ fromJson(inputs.runner_labels) }}
+      # strategy:
+      #   matrix:
+      #     include:
+      #       - unit_checks: ${{ fromJson(inputs.poetry_checkers) }}
+      #         run: ${{ inputs.build_tool }} == 'poetry'
+      permissions:
+        actions: read
+        id-token: write
+        contents: write
+        checks: write
+        issues: read
+        pull-requests: write
+      steps:
+        # Checkout
+        - name: GitHub Checkout
+          uses: actions/checkout@v4
+          with:
+            fetch-depth: 1
+            repository: ${{ inputs.repository }}
+            token: ${{ secrets.GH_PR_TOKEN || secrets.GITHUB_TOKEN }}
+
+#        # Authenticate to Google Cloud
+#        - name: Authenticate to Google Cloud CI CD
+#          if: ${{ inputs.unit_test_auth }}
+#          id: auth
+#          uses: cloud-gcp-gpc/common-workflows/.github/actions/authenticate-to-gcp@v5
+#          with:
+#            gcp_project: ${{ inputs.gcp_project }}
+#            service_account: ${{ inputs.service_account }}
+#            iac_workflow: false
+
+        #Setup mariadb connector
+        - name: Setup MariaDB connector
+          run: |
+            sudo apt install libmariadb3 libmariadb-dev
+
+        ######Python and cache setup###
+        # Python Setup
+        - name: Setup Python ${{ inputs.python_vsn }}
+          id: setup-python
+          uses: actions/setup-python@v5
+          with:
+            python-version: ${{ inputs.python_vsn }}
+
+        #UNIT TESTS
+
+        #Install PY dependencies
+        - name: Install Python Dependencies
+          run: |
+            python -m pip install -r ${{ inputs.requirements_file }}
+            if [[ "${{ inputs.build_tool }}" == 'poetry' ]]; then
+              echo -e "\e[32mInstalling ${{ inputs.build_tool }}...\e[0m"
+              pip install ${{ inputs.build_tool }}
+              ${{ inputs.build_tool }} install
+            elif [[ "${{ inputs.build_tool }}" == 'pip' ]]; then
+              pip install ${{ inputs.test_tool }} pytest-cov
+            fi
+
+        #Run Unit Tests
+        - name: Run Unit Tests
+          id: python-unit
+          continue-on-error: true
+          run: |
+            if [[ "${{ inputs.build_tool }}" == 'poetry' && ${{ inputs.test_tool }} == 'doit' ]]; then
+              commands=(${{ fromJson(inputs.poetry_checkers) }})
+              for cmd in "${commands[@]}"; do
+                echo -e "\e[32mRunning $cmd Check\e[0m"
+                ${{ inputs.build_tool }} run ${{ inputs.test_tool }} $cmd
+              done  
+            elif [[ "${{ inputs.build_tool }}" == 'pip' ]]; then
+              echo -e "\e[32mRunning Pytest...\e[0m"
+              ${{ inputs.test_tool }} --verbose --cov=${{inputs.coverage_dir}}
+            fi
+
+        # Generate Coverage report
+        - name: Generate Coverage report
+          run: |
+            echo -e "\e[32mGenerating Coverage report...\e[0m"
+            coverage report > ${{ inputs.coverage_file }}
+            echo -e "\e[32mGenerating HTML coverage report...\e[0m"
+            coverage html && echo -e "\e[32mHTML coverage report generated successfully.\e[0m" || echo -e "\e[31mFailed to generate HTML coverage report.\e[0m" >&2
+            cat ${{ inputs.coverage_file }}
+            echo -e "\e[32mGetting coverage value from file...\e[0m"
+            total_coverage_line=$(grep '^TOTAL' ${{ inputs.coverage_file }})
+            total_coverage_percentage=$(echo "$total_coverage_line" | awk '{print $NF}' | tr -d '%')
+            total_coverage_percentage_int=$((total_coverage_percentage))
+            echo "coverage_result=$total_coverage_percentage_int" >> $GITHUB_ENV
+            echo "Extracted coverage percentage: $total_coverage_percentage_int%"
+            if [[ $total_coverage_percentage_int -lt ${{ inputs.coverage_min }} ]]; then
+              echo "Unit Test Coverage is below limit! Desired is ${{ inputs.coverage_min }} and yours is $total_coverage_percentage_int"
+              ${{ inputs.pass_failed_unit_test }}
+            else
+              echo "Unit Test Coverage meets the desired limit."
+            fi
+
+        # Upload html coverage results
+        - name: Upload HTML Coverage Report
+          if: success() || failure()
+          uses: actions/upload-artifact@v4
+          with:
+            name: html-coverage-report
+            retention-days: 1
+            path: htmlcov/
+              # Update PR with Unit test results
+
+        # Upload Cover for Sonar
+        - name: Upload Coverage File
+          if: success() || failure()
+          uses: actions/upload-artifact@v4
+          with:
+            name: ${{ inputs.coverage_file }}
+            retention-days: 1
+            path: ${{ inputs.coverage_file }}
+
+        # Update PR with Gradle Unit test results
+        - name: Update PR Python Unit
+          uses: actions/github-script@v7
+          if: |
+            (success() || failure()) &&
+            (github.event_name != 'push' && github.event.action == 'opened' &&
+            github.event.pull_request.merged == false)
+          with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            script: |
+              const output = `#### Python Unit Test - \`${{ steps.python-unit.outcome }}\`
+              *Tested by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: output
+              })
+
+
+#    #######################
+#    # SNYK Nested Workflow
+#    #######################
+#    snyk_scan:
+#      name: snyk_scan
+#      if: false
+#      #if: ${{ inputs.snyk_scan }}
+#      #if: always()
+#      needs: [build]
+#      uses: ufocultist/common-workflows/.github/workflows/snyk.yml@feature/docker-build-publish
+#      with:
+#        art_vsn: ${{ needs.build.outputs.vsn }}
+#        repository: ${{ inputs.repository }}
+#        build_tool: ${{ inputs.build_tool }}
+#        python_vsn: ${{ inputs.python_vsn }}
+#        snyk_org: ${{ inputs.snyk_org }}
+#        test_tool: ${{ inputs.test_tool }}
+#        runner_labels: ${{ inputs.runner_labels }} #Doesn't work with SH Runner. Defaulted to ubuntu-latest.
+#      secrets: inherit
+
+
+    ####NESTED WORKFLOW#####
+    # Docker Build & Publish
+    ########################
+    publish:
+      if: ${{ inputs.docker_build }}
+      #if: ( always() && inputs.docker_build )
+      needs: [build]
+      uses: ufocultist/wtv-cicd/.github/workflows/publish.yml@feature/develop
+      with:
+        art_vsn: ${{ needs.build.outputs.vsn }}
+        app_name: ${{ inputs.app_name }}
+        library: ${{ inputs.library }}
+        function: ${{ inputs.function }}
+        docker_build: ${{ inputs.docker_build }}
+        docker_build_args: ${{ inputs.docker_build_args }}
+        docker_uri: ${{ inputs.docker_uri }}
+        docker_repo: ${{ inputs.docker_repo }}
+        repository: ${{ inputs.repository }}
+        registry_type: ${{ inputs.registry_type }}
+        azure_cr: ${{ inputs.azure_cr }}
+        aws_ecr: ${{ inputs.aws_ecr }}
+        aws_region: ${{ inputs.aws_region }}
+        aws_account_id: ${{ inputs.aws_account_id }}
+        gcp_ar: ${{ inputs.gcp_ar }}
+        gcp_region: ${{ inputs.gcp_region }}
+        gcp_project: ${{ inputs.gcp_project }}
+        runner_labels: ${{ inputs.runner_labels }} #Doesn't work with SH Runner. Defaulted to ubuntu-latest.
+      secrets: inherit
+
+  #################################
+  # Output to GITHUB
+  #################################
+    output:
+      runs-on: ${{ fromJson(inputs.runner_labels) }}
+      if: always()
+      needs: [ build, publish ]
+
+      steps:
+        # Output to file
+        - name: Echo Variables to File
+          run: |
+            echo "tag_version=${{ needs.build.outputs.vsn }}" >> output.txt
+
+        # Upload output to Github
+        - name: Upload output file
+          uses: actions/upload-artifact@v4
+          with:
+            name: output.txt
+            path: ./
+            retention-days: 1
+            overwrite: true
