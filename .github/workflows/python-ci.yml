@@ -155,6 +155,11 @@ on:
         description: "AWS Account ID"
         type: string
         required: false
+      aws_ecr_namespace:
+        description: "AWS Container Registry Namespace"
+        default: wtv_ns
+        type: string
+        required: false
       #GCP########
       gcp_ar:
         description: "Name of GCP Artifact Registry"
