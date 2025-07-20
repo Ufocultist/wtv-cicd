@@ -35,6 +35,19 @@ on:
         description: "EKS cluster name"
         type: string
         required: true
+      ##APPS
+      nginx:
+        description: "Flag to run helm install Nginx"
+        default: false
+        type: boolean
+      mariadb:
+        description: "Flag to run helm install Mariadb"
+        default: false
+        type: boolean
+      flask:
+        description: "Flag to run helm install Flask App"
+        default: false
+        type: boolean
 
 
 jobs:
@@ -68,12 +81,6 @@ jobs:
             --region ${{ inputs.aws_region }} \
             --name ${{ inputs.env }}-${{ inputs.cluster_name }}
 
-#      - name: Export AWS credentials for kubectl exec plugin
-#        run: |
-#          echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> $GITHUB_ENV
-#          echo "export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> $GITHUB_ENV
-#          echo "export AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}" >> $GITHUB_ENV
-#          echo "export AWS_REGION=${AWS_REGION}" >> $GITHUB_ENV
 
       - name: Check kubectl context
         run: |
