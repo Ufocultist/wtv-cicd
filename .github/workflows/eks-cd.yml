@@ -107,12 +107,13 @@ jobs:
           set +a
 
           helm install mariadb ./helm/mariadb \
-            --namespace ${{ inputs.env }} --create-namespace \
-            --set mariadb.database="$DB_NAME" \
-            --set mariadb.user="$DB_USERNAME" \
-            --set mariadb.password="$DB_PASSWORD" \
-            --set mariadb.rootPassword="$DB_ROOT_PASSWORD" \
-            --set mariadb.rootHost="%" \
-            --set persistence.enabled=true \
-            --set persistence.size=1Gi \
-            --set primary.persistence.storageClass=gp2
+          --namespace ${{ inputs.env }} --create-namespace \
+          --set mariadb.database="$DB_NAME" \
+          --set mariadb.user="$DB_USERNAME" \
+          --set mariadb.password="$DB_PASSWORD" \
+          --set mariadb.rootPassword="$DB_ROOT_PASSWORD" \
+          --set mariadb.rootHost="%" \
+          --set persistence.enabled=true \
+          --set persistence.size=1Gi \
+          --set primary.persistence.existingClaim="" \
+          --set primary.persistence.storageClass=gp2
