@@ -62,24 +62,12 @@ jobs:
           role-to-assume: arn:aws:iam::${{ inputs.aws_account_id }}:role/dev-wtv-github-actions-role
           aws-region: ${{ inputs.aws_region }}
 
-      # Ath to eks
-      - name: Update kubeconfig for EKS
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ inputs.aws_region }} \
-            --name ${{ inputs.env }}-${{ inputs.cluster_name }}
-
       - name: Update kubeconfig for EKS
         run: |
           mkdir -p ~/.kube
           aws eks update-kubeconfig \
             --region ${{ inputs.aws_region }} \
             --name ${{ inputs.env }}-${{ inputs.cluster_name }}
-        env:
-          AWS_REGION: ${{ inputs.aws_region }}
-          AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ env.AWS_SESSION_TOKEN }}
 
       - name: Check kubectl context
         run: |
@@ -93,12 +81,6 @@ jobs:
           echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
           cat .env
 
-      #Run Helm install
       - name: Helm install
-        env:
-          AWS_REGION: ${{ inputs.aws_region }}
-          AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ env.AWS_SESSION_TOKEN }}
         run: | 
           helm install nginx ./helm/nginx --namespace ${{ inputs.env }} --create-namespace
