@@ -68,14 +68,19 @@ jobs:
             --region ${{ inputs.aws_region }} \
             --name ${{ inputs.env }}-${{ inputs.cluster_name }}
 
-      - name: Export AWS credentials for kubectl exec plugin
-        run: |
-          echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> $GITHUB_ENV
-          echo "export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> $GITHUB_ENV
-          echo "export AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}" >> $GITHUB_ENV
-          echo "export AWS_REGION=${AWS_REGION}" >> $GITHUB_ENV
+#      - name: Export AWS credentials for kubectl exec plugin
+#        run: |
+#          echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> $GITHUB_ENV
+#          echo "export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> $GITHUB_ENV
+#          echo "export AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}" >> $GITHUB_ENV
+#          echo "export AWS_REGION=${AWS_REGION}" >> $GITHUB_ENV
 
       - name: Check kubectl context
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ env.AWS_SESSION_TOKEN }}
+          AWS_REGION: ${{ env.AWS_REGION }}
         run: |
           kubectl config get-contexts
           kubectl get nodes
