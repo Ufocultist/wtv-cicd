@@ -105,7 +105,16 @@ jobs:
           set -a
           source .env
           set +a
-
+          kubectl delete storageclass gp2
+          helm upgrade --install aws-ebs-csi-driver aws-ebs-csi-driver/aws-ebs-csi-driver \
+            --namespace kube-system \
+            --set controller.serviceAccount.create=true \
+            --set node.serviceAccount.create=true \
+            --set "storageClasses[0].name=gp2" \
+            --set "storageClasses[0].parameters.type=gp2" \
+            --set "storageClasses[0].reclaimPolicy=Delete" \
+            --set "storageClasses[0].volumeBindingMode=WaitForFirstConsumer"
+          kubectl rollout status deployment -n kube-system ebs-csi-controller
           helm install mariadb ./helm/mariadb \
             --namespace ${{ inputs.env }} --create-namespace \
             --set mariadb.database="$DB_NAME" \
