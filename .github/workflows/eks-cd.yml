@@ -7,6 +7,11 @@ on:
         description: 'AWS Account ID'
         required: true
         type: string
+      env:
+        description: 'Environment'
+        default: dev
+        required: false
+        type: string
       image_tag:
         description: "The version tag of Docker image to be downloaded."
         required: false
@@ -25,6 +30,11 @@ on:
         description: "AWS Region"
         type: string
         required: false
+      cluster_name:
+        default: wtv-cluster
+        description: "EKS cluster name"
+        type: string
+        required: true
 
 
 jobs:
@@ -52,14 +62,21 @@ jobs:
           role-to-assume: arn:aws:iam::${{ inputs.aws_account_id }}:role/dev-wtv-github-actions-role
           aws-region: ${{ inputs.aws_region }}
 
-#      - name: Fetch secrets from AWS Secrets Manager
-#        id: secrets
-#        run: |
-#          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id /wtv/dev/db --query SecretString --output text)
-#          echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
-#          cat .env
+      # Ath to eks
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ inputs.aws_region }} \
+            --name ${{ inputs.env }}-${{ inputs.cluster_name }}
+
+      - name: Fetch secrets from AWS Secrets Manager
+        id: secrets
+        run: |
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id /wtv/${{ inputs.env }}/db --query SecretString --output text)
+          echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
+          cat .env
 
       #Run Helm install
       - name: Helm install
         run: | 
-          helm install nginx ./helm/nginx --namespace dev --create-namespace
+          helm install nginx ./helm/nginx --namespace ${{ inputs.env }} --create-namespace
