@@ -92,7 +92,7 @@ jobs:
         run: |
           SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id /wtv/${{ inputs.env }}/db --query SecretString --output text)
           echo "$SECRET_JSON" | jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' > .env
-          cat .env
+#          cat .env
 
       - name: Helm install Nginx
         if: ${{ inputs.nginx }}
@@ -129,6 +129,9 @@ jobs:
       - name: Helm install WebApp
         if: ${{inputs.wtv}}
         run: |
+          set -a
+          source .env
+          set +a
           helm upgrade --install flask ./helm/flask \
             --namespace dev --create-namespace \
             --set image.repository="${{ inputs.aws_account_id }}.dkr.ecr.us-east-1.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}" \
