@@ -87,6 +87,22 @@ jobs:
           echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
           cat .env
 
-      - name: Helm install
+      - name: Helm install Nginx
+        if: ${{ inputs.nginx }}
         run: | 
           helm install nginx ./helm/nginx --namespace ${{ inputs.env }} --create-namespace
+
+      - name: Helm install Mariadb
+        if: ${{ inputs.mariadb }}
+        run: |
+          set -a
+          source .env
+          set +a
+
+          helm install mariadb ./helm/mariadb \
+            --namespace ${{ inputs.env }} --create-namespace \
+            --set mariadb.database="$DB_NAME" \
+            --set mariadb.user="$DB_USERNAME" \
+            --set mariadb.password="$DB_PASSWORD" \
+            --set mariadb.rootPassword="$DB_ROOT_PASSWORD" \
+            --set mariadb.rootHost="%"
