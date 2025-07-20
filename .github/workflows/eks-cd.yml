@@ -66,8 +66,7 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ inputs.aws_region }} \
-            --name ${{ inputs.env }}-${{ inputs.cluster_name }} \
-            --role-arn arn:aws:iam::${{ inputs.aws_account_id }}:role/dev-wtv-github-actions-role
+            --name ${{ inputs.env }}-${{ inputs.cluster_name }}
 
       - name: Check kubectl context
         run: |
