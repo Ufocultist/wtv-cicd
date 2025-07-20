@@ -114,4 +114,5 @@ jobs:
           --set mariadb.rootPassword="$DB_ROOT_PASSWORD" \
           --set mariadb.rootHost="%" \
           --set persistence.enabled=true \
-          --set persistence.size=1Gi
+          --set persistence.size=1Gi \
+          --set primary.persistence.storageClass=""
