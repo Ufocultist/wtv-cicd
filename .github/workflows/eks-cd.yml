@@ -69,6 +69,23 @@ jobs:
             --region ${{ inputs.aws_region }} \
             --name ${{ inputs.env }}-${{ inputs.cluster_name }}
 
+      - name: Update kubeconfig for EKS
+        run: |
+          mkdir -p ~/.kube
+          aws eks update-kubeconfig \
+            --region ${{ inputs.aws_region }} \
+            --name ${{ inputs.env }}-${{ inputs.cluster_name }}
+        env:
+          AWS_REGION: ${{ inputs.aws_region }}
+          AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ env.AWS_SESSION_TOKEN }}
+
+      - name: Check kubectl context
+        run: |
+          kubectl config get-contexts
+          kubectl get nodes
+
       - name: Fetch secrets from AWS Secrets Manager
         id: secrets
         run: |
@@ -78,5 +95,10 @@ jobs:
 
       #Run Helm install
       - name: Helm install
+        env:
+          AWS_REGION: ${{ inputs.aws_region }}
+          AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ env.AWS_SESSION_TOKEN }}
         run: | 
           helm install nginx ./helm/nginx --namespace ${{ inputs.env }} --create-namespace
