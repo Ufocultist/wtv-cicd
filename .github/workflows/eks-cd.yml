@@ -113,6 +113,6 @@ jobs:
             --set mariadb.password="$DB_PASSWORD" \
             --set mariadb.rootPassword="$DB_ROOT_PASSWORD" \
             --set mariadb.rootHost="%" \
-            --set persistence.enabled=true \
-            --set persistence.size=1Gi \
-            --set persistence.storageClass=gp2
+            --set primary.persistence.enabled=true \
+            --set primary.persistence.size=1Gi \
+            --set primary.persistence.storageClass=gp2
