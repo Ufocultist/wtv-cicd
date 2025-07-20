@@ -115,4 +115,4 @@ jobs:
             --set mariadb.rootHost="%" \
             --set persistence.enabled=true \
             --set persistence.size=1Gi \
-            --set persistence.storageClass=gp3
+            --set persistence.storageClass=gp2
