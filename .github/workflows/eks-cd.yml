@@ -91,7 +91,7 @@ jobs:
         id: secrets
         run: |
           SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id /wtv/${{ inputs.env }}/db --query SecretString --output text)
-          echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
+          echo "$SECRET_JSON" | jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' > .env
           cat .env
 
       - name: Helm install Nginx
