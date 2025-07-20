@@ -132,7 +132,7 @@ jobs:
           set -a
           source .env
           set +a
-          helm upgrade --install flask ./helm/flask \
+          helm upgrade --install wtvapp ./helm/wtvapp \
             --namespace dev --create-namespace \
             --set image.repository="${{ inputs.aws_account_id }}.dkr.ecr.us-east-1.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}" \
             --set image.tag="${{ inputs.image_tag }}" \
