@@ -7,6 +7,24 @@ on:
         description: 'AWS Account ID'
         required: true
         type: string
+      image_tag:
+        description: "The version tag of Docker image to be downloaded."
+        required: false
+        type: string
+      aws_ecr:
+        description: "Name of AWS Container Registry"
+        type: string
+        required: false
+      aws_ecr_namespace:
+        description: "AWS Container Registry Namespace"
+        default: wtv_ns
+        type: string
+        required: false
+      aws_region:
+        default: us-east-1
+        description: "AWS Region"
+        type: string
+        required: false
 
 
 jobs:
@@ -27,15 +45,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Authenticate to AWS
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v3
         with:
           role-to-assume: arn:aws:iam::${{ inputs.aws_account_id }}:role/dev-wtv-github-actions-role
-          aws-region: us-east-1
+          aws-region: ${{ inputs.aws_region }}
 
-      - name: Fetch secrets from AWS Secrets Manager
-        id: secrets
-        run: |
-          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id /wtv/dev/db --query SecretString --output text)
-          echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
-          cat .env
+#      - name: Fetch secrets from AWS Secrets Manager
+#        id: secrets
+#        run: |
+#          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id /wtv/dev/db --query SecretString --output text)
+#          echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
+#          cat .env
+
+      #Run Helm install
+      - name: Helm install
+        run: | 
+          helm install nginx ./helm/nginx --namespace dev --create-namespace
