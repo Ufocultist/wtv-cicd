@@ -44,7 +44,7 @@ on:
         description: "Flag to run helm install Mariadb"
         default: false
         type: boolean
-      flask:
+      wtv:
         description: "Flag to run helm install Flask App"
         default: false
         type: boolean
@@ -124,4 +124,15 @@ jobs:
             --set mariadb.rootHost="%" \
             --set persistence.enabled=true \
             --set persistence.size=1Gi \
+            --set persistence.storageClass=gp2
+
+      - name: Helm install WebApp
+        if: ${{inputs.wtv}}
+        run: |
+          helm upgrade --install flask ./helm/flask \
+            --namespace dev --create-namespace \
+            --set image.repository="${{ inputs.aws_account_id }}.dkr.ecr.us-east-1.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}" \
+            --set image.tag="${{ inputs.image_tag }}" \
+            --set env.DB_PASSWORD="$DB_PASSWORD" \
+            --set persistence.enabled=true \
             --set persistence.storageClass=gp2
