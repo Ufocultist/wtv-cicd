@@ -169,5 +169,6 @@ jobs:
             --set image.repository="${{ inputs.aws_account_id }}.dkr.ecr.us-east-1.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}" \
             --set image.tag="${{ env.tag_version }}" \
             --set env.DB_PASSWORD="$DB_PASSWORD" \
+            --set env.SECRET_KEY="$SECRET_KEY" \
             --set persistence.enabled=true \
             --set persistence.storageClass=gp2
