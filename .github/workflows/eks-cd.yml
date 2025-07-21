@@ -124,12 +124,6 @@ jobs:
           echo "$SECRET_JSON" | jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' > .env
 #          cat .env
 
-      - name: Helm install Nginx
-        if: ${{ inputs.nginx }}
-        run: | 
-          helm upgrade --install nginx ./helm/nginx \
-            --namespace ${{ inputs.env }} \
-            --set service.type=LoadBalancer
 
       - name: Helm install Mariadb
         if: ${{ inputs.mariadb }}
@@ -172,3 +166,11 @@ jobs:
             --set env.SECRET_KEY="$SECRET_KEY" \
             --set persistence.enabled=true \
             --set persistence.storageClass=gp2
+          
+
+      - name: Helm install Nginx
+        if: ${{ inputs.nginx }}
+        run: |
+          helm upgrade --install nginx ./helm/nginx \
+            --namespace ${{ inputs.env }} \
+            --set service.type=LoadBalancer
