@@ -127,7 +127,9 @@ jobs:
       - name: Helm install Nginx
         if: ${{ inputs.nginx }}
         run: | 
-          helm install nginx ./helm/nginx --namespace ${{ inputs.env }} --create-namespace
+          helm upgrade --install nginx ./helm/nginx \
+            --namespace ${{ inputs.env }} \
+            --set service.type=LoadBalancer
 
       - name: Helm install Mariadb
         if: ${{ inputs.mariadb }}
