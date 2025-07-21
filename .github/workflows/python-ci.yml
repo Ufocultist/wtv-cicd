@@ -548,7 +548,7 @@ jobs:
       runs-on: ${{ fromJson(inputs.runner_labels) }}
       if: ${{ inputs.docker_build }}
       #if: ( always() && inputs.docker_build )
-      needs: [build]
+      needs: [build, unit-test]
       steps:
 
         # Checkout
