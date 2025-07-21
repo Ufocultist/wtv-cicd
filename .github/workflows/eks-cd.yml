@@ -180,19 +180,24 @@ jobs:
       - name: Validate NGINX Helm install
         run: |
           set -e
+
+          echo "Checking NGINX Helm release in namespace '${{ inputs.env }}'..."
           helm status nginx -n ${{ inputs.env }}
 
+          echo "Checking for NGINX pods..."
           if ! kubectl get pods -n ${{ inputs.env }} -l app=nginx | grep -q nginx; then
             echo "No nginx pods found"
             exit 1
           fi
 
+          echo "Waiting for NGINX pods to become ready..."
           kubectl wait --for=condition=Ready pods -l app=nginx -n ${{ inputs.env }} --timeout=120s
 
+          echo "Waiting for ELB to be assigned..."
           for i in {1..20}; do
             EXTERNAL_IP=$(kubectl get svc -n ${{ inputs.env }} nginx-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
             if [[ -n "$EXTERNAL_IP" ]]; then break; fi
-            echo "Waiting for ELB hostname... ($i/20)"
+            echo "Still waiting for ELB hostname... ($i/20)"
             sleep 5
           done
 
@@ -201,6 +206,7 @@ jobs:
             exit 1
           fi
 
+          echo "Testing HTTP response from NGINX at $EXTERNAL_IP..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP/user/login)
 
           if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "302" ]]; then
@@ -209,5 +215,9 @@ jobs:
           fi
 
           echo "NGINX responded with HTTP $HTTP_CODE"
-          echo "[Open App in browser](http://$EXTERNAL_IP)" >> $GITHUB_STEP_SUMMARY
+
+          echo "✅ NGINX is accessible at: http://$EXTERNAL_IP"
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ NGINX is ready" >> $GITHUB_STEP_SUMMARY
+          echo "[🔗 Open App in browser](http://$EXTERNAL_IP/user/login)" >> $GITHUB_STEP_SUMMARY
         shell: bash
