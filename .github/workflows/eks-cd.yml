@@ -175,3 +175,31 @@ jobs:
           helm upgrade --install nginx ./helm/nginx \
             --namespace ${{ inputs.env }} \
             --set service.type=LoadBalancer
+          
+
+      - name: Validate NGINX Helm install
+        run: |
+          set -e
+          helm status nginx -n ${{ inputs.env }}
+          kubectl get pods -n ${{ inputs.env }} -l app.kubernetes.io/name=nginx
+          kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=nginx -n ${{ inputs.env }} --timeout=120s
+          for i in {1..20}; do
+            EXTERNAL_IP=$(kubectl get svc -n ${{ inputs.env }} nginx-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            if [[ -n "$EXTERNAL_IP" ]]; then break; fi
+            echo "Waiting for ELB hostname..."
+            sleep 5
+          done
+          
+          if [[ -z "$EXTERNAL_IP" ]]; then
+            echo "LoadBalancer external IP not assigned"
+            exit 1
+          fi
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP/user/login)
+
+          if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "302" ]]; then
+            echo "NGINX ELB not responding correctly, got HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          echo "NGINX responded with HTTP $HTTP_CODE"
