@@ -382,8 +382,8 @@ jobs:
   # # Run Unit Tests
   # ##################
     unit-test:
-      if: false
-      #if: ${{ inputs.unit_test_enable }}
+      #if: false
+      if: ${{ inputs.unit_test_enable }}
       needs: build
       runs-on: ${{ fromJson(inputs.runner_labels) }}
       # strategy:
