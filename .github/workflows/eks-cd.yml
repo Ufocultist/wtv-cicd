@@ -181,15 +181,21 @@ jobs:
         run: |
           set -e
           helm status nginx -n ${{ inputs.env }}
-          kubectl get pods -n ${{ inputs.env }} -l app.kubernetes.io/name=nginx
-          kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=nginx -n ${{ inputs.env }} --timeout=120s
+
+          if ! kubectl get pods -n ${{ inputs.env }} -l app=nginx | grep -q nginx; then
+            echo "No nginx pods found"
+            exit 1
+          fi
+
+          kubectl wait --for=condition=Ready pods -l app=nginx -n ${{ inputs.env }} --timeout=120s
+
           for i in {1..20}; do
             EXTERNAL_IP=$(kubectl get svc -n ${{ inputs.env }} nginx-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
             if [[ -n "$EXTERNAL_IP" ]]; then break; fi
-            echo "Waiting for ELB hostname..."
+            echo "Waiting for ELB hostname... ($i/20)"
             sleep 5
           done
-          
+
           if [[ -z "$EXTERNAL_IP" ]]; then
             echo "LoadBalancer external IP not assigned"
             exit 1
@@ -203,3 +209,4 @@ jobs:
           fi
 
           echo "NGINX responded with HTTP $HTTP_CODE"
+        shell: bash
