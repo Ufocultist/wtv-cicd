@@ -209,4 +209,5 @@ jobs:
           fi
 
           echo "NGINX responded with HTTP $HTTP_CODE"
+          echo "[Open App in browser](http://$EXTERNAL_IP)" >> $GITHUB_STEP_SUMMARY
         shell: bash
