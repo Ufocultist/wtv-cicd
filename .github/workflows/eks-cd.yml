@@ -1,0 +1,205 @@
+name: EKS CD
+
+on:
+  workflow_call:
+    inputs:
+      aws_account_id:
+        description: 'AWS Account ID'
+        required: true
+        type: string
+      env:
+        description: 'Environment'
+        default: dev
+        required: false
+        type: string
+      image_tag:
+        description: "The version tag of Docker image to be downloaded."
+        required: false
+        type: string
+      aws_ecr:
+        description: "Name of AWS Container Registry"
+        type: string
+        required: false
+      aws_ecr_namespace:
+        description: "AWS Container Registry Namespace"
+        default: wtv_ns
+        type: string
+        required: false
+      aws_region:
+        default: us-east-1
+        description: "AWS Region"
+        type: string
+        required: false
+      cluster_name:
+        default: wtv-cluster
+        description: "EKS cluster name"
+        type: string
+        required: true
+      ##APPS
+      nginx:
+        description: "Flag to run helm install Nginx"
+        default: false
+        type: boolean
+      mariadb:
+        description: "Flag to run helm install Mariadb"
+        default: false
+        type: boolean
+      wtv:
+        description: "Flag to run helm install Flask App"
+        default: false
+        type: boolean
+
+
+jobs:
+
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      checks: write
+      issues: read
+      pull-requests: write
+
+    steps:
+
+      # Checkout
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Check output.txt
+      - name: Check OUTPUT using API
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          output_file=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            /repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            | jq -r '.artifacts[] | select(.name == "output.txt") | .name')
+          echo "output_file=${output_file}" >> $GITHUB_ENV
+
+      # Download output from GitHub
+      - name: Download output.txt
+        if: ( env.output_file == 'output.txt' )
+        uses: actions/download-artifact@v4
+        with:
+          name: output.txt
+          path: ./
+
+      # Parse output
+      - name: Parse Output File
+        if: ( env.output_file == 'output.txt' )
+        id: pre-parse
+        run: |
+          while IFS= read -r line; do
+            value=$(echo "$line" | cut -d= -f2)
+            echo "tag_version=$value" >> $GITHUB_ENV
+          done < output.txt
+
+      # Authenticate to AWS
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::${{ inputs.aws_account_id }}:role/dev-wtv-github-actions-role
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ inputs.aws_region }} \
+            --name ${{ inputs.env }}-${{ inputs.cluster_name }}
+
+
+      - name: Check kubectl context
+        run: |
+          kubectl config get-contexts
+          kubectl get nodes
+
+      - name: Fetch secrets from AWS Secrets Manager
+        id: secrets
+        run: |
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id /wtv/${{ inputs.env }}/db --query SecretString --output text)
+          echo "$SECRET_JSON" | jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' > .env
+
+
+      - name: Helm install Mariadb
+        if: ${{ inputs.mariadb }}
+        run: |
+          set -a
+          source .env
+          set +a
+          kubectl delete storageclass gp2 || true
+          helm repo add aws-ebs-csi-driver https://kubernetes-sigs.github.io/aws-ebs-csi-driver
+          helm repo update
+          helm upgrade --install aws-ebs-csi-driver aws-ebs-csi-driver/aws-ebs-csi-driver \
+            --namespace kube-system \
+            --set controller.serviceAccount.create=true \
+            --set node.serviceAccount.create=true \
+            --set "storageClasses[0].name=gp2" \
+            --set "storageClasses[0].parameters.type=gp2" \
+            --set "storageClasses[0].reclaimPolicy=Delete" \
+            --set "storageClasses[0].volumeBindingMode=WaitForFirstConsumer"
+          kubectl rollout status deployment -n kube-system ebs-csi-controller
+          helm install mariadb ./helm/mariadb \
+            --namespace ${{ inputs.env }} --create-namespace \
+            --set mariadb.database="$DB_NAME" \
+            --set mariadb.user="$DB_USERNAME" \
+            --set mariadb.password="$DB_PASSWORD" \
+            --set mariadb.rootPassword="$DB_ROOT_PASSWORD" \
+            --set mariadb.rootHost="%" \
+            --set persistence.enabled=true \
+            --set persistence.size=1Gi \
+            --set persistence.storageClass=gp2
+
+      - name: Helm install WebApp
+        if: ${{inputs.wtv}}
+        run: |
+          set -a
+          source .env
+          set +a
+          helm upgrade --install wtvapp ./helm/wtvapp \
+            --namespace dev --create-namespace \
+            --set image.repository="${{ inputs.aws_account_id }}.dkr.ecr.us-east-1.amazonaws.com/${{ inputs.aws_ecr_namespace }}/${{ inputs.aws_ecr }}" \
+            --set image.tag="${{ env.tag_version }}" \
+            --set env.DB_PASSWORD="$DB_PASSWORD" \
+            --set env.SECRET_KEY="$SECRET_KEY" \
+            --set persistence.enabled=true \
+            --set persistence.storageClass=gp2
+          
+
+      - name: Helm install Nginx
+        if: ${{ inputs.nginx }}
+        run: |
+          helm upgrade --install nginx ./helm/nginx \
+            --namespace ${{ inputs.env }} \
+            --set service.type=LoadBalancer
+          
+
+      - name: Show NGINX ELB link
+        run: |
+          set -e
+
+          echo "Fetching ELB hostname for NGINX..."
+
+          for i in {1..20}; do
+            EXTERNAL_HOSTNAME=$(kubectl get svc -n ${{ inputs.env }} nginx-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || true)
+            if [[ -n "$EXTERNAL_HOSTNAME" ]]; then
+              echo "Found ELB hostname: $EXTERNAL_HOSTNAME"
+              break
+            fi
+            echo "Waiting for ELB hostname... ($i/20)"
+            sleep 5
+          done
+
+          if [[ -z "$EXTERNAL_HOSTNAME" ]]; then
+            echo "ELB hostname not assigned."
+            exit 1
+          fi
+
+          echo ""
+          echo "Application is available at: http://$EXTERNAL_HOSTNAME"
+          echo ""
+          echo "### 🔗 [Open App in browser](http://$EXTERNAL_HOSTNAME)" >> $GITHUB_STEP_SUMMARY
+        shell: bash
