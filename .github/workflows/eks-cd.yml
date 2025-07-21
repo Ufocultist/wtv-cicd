@@ -207,17 +207,20 @@ jobs:
           fi
 
           echo "Testing HTTP response from NGINX at $EXTERNAL_IP..."
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP/user/login)
 
-          if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "302" ]]; then
-            echo "NGINX ELB not responding correctly, got HTTP $HTTP_CODE"
-            exit 1
-          fi
+          for i in {1..10}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP/user/login || true)
+            if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "302" ]]; then
+              echo "NGINX responded with HTTP $HTTP_CODE"
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### NGINX is ready" >> $GITHUB_STEP_SUMMARY
+              echo "[🔗 Open App in browser](http://$EXTERNAL_IP/user/login)" >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+            echo "Waiting for HTTP 200/302... Got $HTTP_CODE ($i/10)"
+            sleep 5
+          done
 
-          echo "NGINX responded with HTTP $HTTP_CODE"
-
-          echo "✅ NGINX is accessible at: http://$EXTERNAL_IP"
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ✅ NGINX is ready" >> $GITHUB_STEP_SUMMARY
-          echo "[🔗 Open App in browser](http://$EXTERNAL_IP/user/login)" >> $GITHUB_STEP_SUMMARY
+          echo "NGINX ELB not responding correctly after retries"
+          exit 1
         shell: bash
